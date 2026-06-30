@@ -17,7 +17,10 @@ No API key is stored in this repo. Each user supplies their own via `DOUBLEWORD_
 
 ## Prerequisites
 - [opencode](https://opencode.ai) installed
-- [ocx](https://github.com/kdcokenny/ocx): `npm i -g ocx`
+  ```bash
+  curl -fsSL https://opencode.ai/install | bash
+  ```
+- [ocx](https://github.com/kdcokenny/ocx): `npm i -g ocx` or `bun i -g ocx`
 - `python3` (the MCP tool is stdlib-only — no pip installs)
 - A Doubleword API key: `export DOUBLEWORD_API_KEY=sk-...`
 
@@ -33,7 +36,7 @@ export DOUBLEWORD_API_KEY=sk-...
 docker compose up -d --build
 
 # 2. install into opencode
-ocx init --global                                  # first time only
+ocx init --global                                  # This is only necessary for the first time
 ocx registry add http://localhost:8077 --name dw --global
 ocx add dw/doubleword --global                     # providers + flex + MCP tool + agent
 
@@ -41,9 +44,62 @@ ocx add dw/doubleword --global                     # providers + flex + MCP tool
 docker compose down
 
 # 4. use it
+# Either you can just run opencode and navigate the menus to choose a model (select /models to see options)
+opencode
+# or you can initialise it with a model when you start it, like this example:
 opencode --model doubleword/moonshotai/Kimi-K2.6        # realtime (fast)
 opencode --model doubleword-flex/moonshotai/Kimi-K2.6   # flex (async, cheaper)
 ```
+
+## Updating after changes to the registry
+You installed with `--global`, so **every `ocx` command below needs `-g`/`--global`** — its
+lockfile lives in `~/.config/opencode`, not in this repo. (Without it you get
+`No ocx.jsonc found in .opencode/ or project root`.)
+
+```bash
+# 1. rebuild the static registry from your edited files/ + registry.jsonc
+ocx build . --out dist
+
+# 2. rebuild + restart the container so it serves the new dist
+docker compose up -d --build
+
+# 3. update the installed FILE-backed components (the MCP tool .py + the agent .md).
+#    --all reconciles every changed component without you needing to paste hashes.
+ocx update --all --global
+
+# 4. re-apply the bundle's config (provider / models / small_model).
+#    The `doubleword` bundle has no files, so step 3 never touches it — only `add`
+#    rewrites those blocks in opencode.jsonc. Run this whenever you change a provider,
+#    add/remove a model, or change small_model.
+ocx add dw/doubleword --global
+
+# 5. stop the registry again
+docker compose down
+
+# 6. refresh opencode's model cache if you added/changed models
+opencode --refresh
+```
+
+### Why each command, and the gotcha you'll hit
+- **`ocx update` vs `ocx add`.** `update` re-copies changed *files* (the `doubleword-async-tool`
+  `.py` and `doubleword-flex-agent` `.md`). `add` re-writes the *config blocks* in
+  `opencode.jsonc` (provider, models, `small_model`, MCP server entry). File changes → `update`;
+  config changes → `add`. When in doubt, run both (update first, then add).
+- **The `No ocx.jsonc found` error.** You ran an `ocx update`/`ocx add` without `--global`. ocx
+  then looks for a *project-local* lockfile in the current directory and fails. Add `-g`.
+- **The hash command ocx prints.** When a file component changed, `ocx add` refuses it and prints
+  `Use 'ocx update http://localhost:8077::dw/...@sha256:<old-hash>'`. That suggestion **omits
+  `--global`** — running it verbatim is exactly what triggers the error above. Either append
+  `--global` to it, or just skip it and run `ocx update --all --global`.
+- **`timeout` in the MCP block is dropped.** opencode's MCP schema has no `timeout` field, so
+  `ocx build` strips it — it never reaches `opencode.jsonc`. Don't rely on it.
+- **Sanity check** that an update landed (installed copy should match what the container serves):
+  ```bash
+  shasum -a 256 ~/.config/opencode/tools/doubleword-async/dw_async_mcp.py
+  curl -s http://localhost:8077/components/doubleword-async-tool/mcp/dw_async_mcp.py | shasum -a 256
+  ```
+
+
 In chat you can also fire an async job from any model:
 > Use the doubleword_async tool to summarise these notes: ...
 

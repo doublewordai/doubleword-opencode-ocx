@@ -4,7 +4,7 @@
     "1.0.0": {
       "name": "doubleword-async-tool",
       "type": "tool",
-      "description": "MCP tool 'doubleword_async' — runs a prompt on Doubleword's flex (async) tier and returns the text. Useful for fire-and-forget async jobs from any model/agent.",
+      "description": "MCP tool set 'doubleword_async' — primary blocking tool returns flex completions directly; fallback pair (submit_async_job + get_async_result) for explicit non-blocking use when the user chooses to wait and check later.",
       "files": [
         {
           "path": "mcp/dw_async_mcp.py",

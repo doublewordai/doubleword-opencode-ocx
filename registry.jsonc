@@ -4,7 +4,7 @@
   // Schema: https://ocx.kdco.dev/schemas/v2/registry.json
   "$schema": "https://ocx.kdco.dev/schemas/v2/registry.json",
   "name": "Doubleword",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "author": "Doubleword",
   "opencode": "1.0.0",
   "ocx": "1.0.16",
@@ -55,7 +55,7 @@
       // Async (flex) as a discrete MCP tool — flex result returned as a tool result.
       "name": "doubleword-async-tool",
       "type": "tool",
-      "description": "MCP tool 'doubleword_async' — runs a prompt on Doubleword's flex (async) tier and returns the text. Useful for fire-and-forget async jobs from any model/agent.",
+      "description": "MCP tool set 'doubleword_async' — primary blocking tool returns flex completions directly; fallback pair (submit_async_job + get_async_result) for explicit non-blocking use when the user chooses to wait and check later.",
       "files": [
         { "path": "mcp/dw_async_mcp.py", "target": "tool/doubleword-async/dw_async_mcp.py" }
       ],
@@ -65,7 +65,7 @@
             "type": "local",
             "command": ["python3", "{env:HOME}/.config/opencode/tools/doubleword-async/dw_async_mcp.py"],
             "environment": { "DOUBLEWORD_API_KEY": "{env:DOUBLEWORD_API_KEY}" },
-            "timeout": 900000
+            "timeout": 30000
           }
         }
       }
