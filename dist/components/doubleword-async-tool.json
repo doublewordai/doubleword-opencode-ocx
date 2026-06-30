@@ -1,0 +1,35 @@
+{
+  "name": "doubleword-async-tool",
+  "versions": {
+    "1.0.0": {
+      "name": "doubleword-async-tool",
+      "type": "tool",
+      "description": "MCP tool 'doubleword_async' — runs a prompt on Doubleword's flex (async) tier and returns the text. Useful for fire-and-forget async jobs from any model/agent.",
+      "files": [
+        {
+          "path": "mcp/dw_async_mcp.py",
+          "target": "tool/doubleword-async/dw_async_mcp.py"
+        }
+      ],
+      "dependencies": [],
+      "opencode": {
+        "mcp": {
+          "doubleword-async": {
+            "type": "local",
+            "command": [
+              "python3",
+              "{env:HOME}/.config/opencode/tools/doubleword-async/dw_async_mcp.py"
+            ],
+            "environment": {
+              "DOUBLEWORD_API_KEY": "{env:DOUBLEWORD_API_KEY}"
+            },
+            "enabled": true
+          }
+        }
+      }
+    }
+  },
+  "dist-tags": {
+    "latest": "1.0.0"
+  }
+}

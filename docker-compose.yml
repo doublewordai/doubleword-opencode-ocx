@@ -1,0 +1,8 @@
+services:
+  registry:
+    build: .
+    image: doubleword-ocx
+    container_name: doubleword-ocx
+    ports:
+      - "${PORT:-8077}:8077"
+    restart: unless-stopped

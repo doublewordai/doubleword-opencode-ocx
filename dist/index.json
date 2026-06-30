@@ -1,0 +1,25 @@
+{
+  "$schema": "https://ocx.kdco.dev/schemas/v2/registry.json",
+  "name": "Doubleword",
+  "version": "0.1.0",
+  "author": "Doubleword",
+  "opencode": "1.0.0",
+  "ocx": "1.0.16",
+  "components": [
+    {
+      "name": "doubleword",
+      "type": "bundle",
+      "description": "Doubleword for opencode: realtime + flex (async) providers, small_model pin, async MCP tool, and a flex background subagent. Requires DOUBLEWORD_API_KEY in your environment."
+    },
+    {
+      "name": "doubleword-async-tool",
+      "type": "tool",
+      "description": "MCP tool 'doubleword_async' — runs a prompt on Doubleword's flex (async) tier and returns the text. Useful for fire-and-forget async jobs from any model/agent."
+    },
+    {
+      "name": "doubleword-flex-agent",
+      "type": "agent",
+      "description": "Subagent 'dw-flex' pinned to Doubleword's flex tier — for non-urgent, self-contained work dispatched in the background."
+    }
+  ]
+}

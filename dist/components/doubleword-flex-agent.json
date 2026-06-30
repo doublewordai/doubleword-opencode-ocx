@@ -1,0 +1,20 @@
+{
+  "name": "doubleword-flex-agent",
+  "versions": {
+    "1.0.0": {
+      "name": "doubleword-flex-agent",
+      "type": "agent",
+      "description": "Subagent 'dw-flex' pinned to Doubleword's flex tier — for non-urgent, self-contained work dispatched in the background.",
+      "files": [
+        {
+          "path": "agent/dw-flex.md",
+          "target": "agent/dw-flex.md"
+        }
+      ],
+      "dependencies": []
+    }
+  },
+  "dist-tags": {
+    "latest": "1.0.0"
+  }
+}
