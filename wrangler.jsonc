@@ -1,0 +1,19 @@
+{
+  // Cloudflare Workers config for the Doubleword ocx registry.
+  // Serves the built `dist/` as static assets; the Worker (src/index.ts) adds
+  // request logging to match the original Go server.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "doubleword-opencode-ocx",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // Ensure the Worker runs for every request so each one is logged, instead
+    // of static assets short-circuiting before the handler is invoked.
+    "run_worker_first": true
+  },
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,2 +1,4 @@
 .env
 /temp
+node_modules
+.wrangler
