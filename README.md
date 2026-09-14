@@ -162,8 +162,24 @@ Cache reads survive the whole agentic loop, including tool calls and reasoning m
 `thinking` blocks (`moonshotai/Kimi-K2.6` multi-turn read 6376 then 6401 tokens).
 
 **Caveats.**
-- opencode emits no `ttl`, so every entry uses Doubleword's **5m** default. The 1h TTL is not
-  reachable from opencode config today.
+- **TTL.** By default the breakpoints opencode places carry no `ttl`, so they land in Doubleword's
+  **5m** bucket. On opencode 1.18.29 you can move to the **1h** bucket by setting `cacheControl` in
+  a model's (or an agent's) `options`:
+
+  ```jsonc
+  "models": {
+    "moonshotai/Kimi-K2.6": {
+      "options": { "cacheControl": { "type": "ephemeral", "ttl": "1h" } }
+    }
+  }
+  ```
+
+  With that set, opencode skips `applyCaching()` and `@ai-sdk/anthropic` sends a single top-level
+  `cache_control` with no per-block markers. Measured: 7439 tokens written to the 1h bucket cold,
+  then 7439 and 7458 read across a warm tool loop, with nothing in the 5m bucket. Put it under the
+  model: the same key in the provider-level `options` is ignored. The check that honours it is
+  missing from the 1.17.8 source, so confirm your opencode version first. This registry keeps the
+  5m default.
 - Doubleword does **no** implicit caching. Three identical unmarked `/chat/completions` calls all
   returned `cached_tokens: 0`, so an unmarked request pays full price every time.
 - The prefix has to clear roughly a 1,300 token floor before anything is cached.
