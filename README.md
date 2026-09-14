@@ -4,16 +4,15 @@ One-step setup for using [Doubleword](https://doubleword.ai) in [opencode](https
 via [ocx](https://github.com/kdcokenny/ocx). Installs:
 
 - **`doubleword`**: realtime provider on Doubleword's Anthropic-compatible Messages endpoint
-  (`/v1/messages`, wired with `@ai-sdk/anthropic`). This wiring is what turns **prompt caching**
-  on; see [Prompt caching](#prompt-caching) for why the OpenAI-compatible wiring does not cache.
+  (`/v1/messages`, wired with `@ai-sdk/anthropic` so [prompt caching](#prompt-caching) works).
 - **`doubleword-flex`**: the same models on the **flex (async) tier** (`service_tier: flex`,
-  `/v1/chat/completions`, OpenAI-compatible): slower, cheaper. Works as a normal model because
-  flex now streams SSE. No prompt caching on this tier (see below).
+  `/v1/chat/completions`, OpenAI-compatible). Slower and cheaper. Works as a normal model because
+  flex now streams SSE. No prompt caching on this tier.
 - **`small_model`** pinned to realtime, so title/summary stays fast and only your answers pay
   flex latency.
-- **`doubleword_async`** — an MCP tool that runs a prompt on the flex tier and returns the result
+- **`doubleword_async`**: an MCP tool that runs a prompt on the flex tier and returns the result
   (fire-and-forget async from any model/agent).
-- **`dw-flex`** — a background subagent pinned to the flex tier for non-urgent work.
+- **`dw-flex`**: a background subagent pinned to the flex tier for non-urgent work.
 
 No API key is stored in this repo. Each user supplies their own via `DOUBLEWORD_API_KEY`
 (resolved at runtime with opencode's `{env:...}` substitution).
@@ -24,12 +23,12 @@ No API key is stored in this repo. Each user supplies their own via `DOUBLEWORD_
   curl -fsSL https://opencode.ai/install | bash
   ```
 - [ocx](https://github.com/kdcokenny/ocx): `npm i -g ocx` or `bun i -g ocx`
-- `python3` (the MCP tool is stdlib-only — no pip installs)
+- `python3` (the MCP tool is stdlib-only with no pip installs)
 - A Doubleword API key: `export DOUBLEWORD_API_KEY=sk-...`
 
 ## Quick start (local, with Docker)
 Run the registry as a container, install it into opencode, done. The container is only needed
-during install — the components get copied into your config.
+during install. The components get copied into your config.
 
 ```bash
 git clone <this-repo> && cd doubleword-opencode-ocx
@@ -43,7 +42,7 @@ ocx init --global                                  # This is only necessary for 
 ocx registry add http://localhost:8077 --name dw --global
 ocx add dw/doubleword --global                     # providers + flex + MCP tool + agent
 
-# 3. stop the container — files are now in ~/.config/opencode
+# 3. stop the container (files are now in ~/.config/opencode)
 docker compose down
 
 # 4. use it
@@ -55,7 +54,7 @@ opencode --model doubleword-flex/moonshotai/Kimi-K2.6   # flex (async, cheaper)
 ```
 
 ## Updating after changes to the registry
-You installed with `--global`, so **every `ocx` command below needs `-g`/`--global`** — its
+You installed with `--global`, so **every `ocx` command below needs `-g`/`--global`**. Its
 lockfile lives in `~/.config/opencode`, not in this repo. (Without it you get
 `No ocx.jsonc found in .opencode/ or project root`.)
 
@@ -71,7 +70,7 @@ docker compose up -d --build
 ocx update --all --global
 
 # 4. re-apply the bundle's config (provider / models / small_model).
-#    The `doubleword` bundle has no files, so step 3 never touches it — only `add`
+#    The `doubleword` bundle has no files, so step 3 never touches it. Only `add`
 #    rewrites those blocks in opencode.jsonc. Run this whenever you change a provider,
 #    add/remove a model, or change small_model.
 ocx add dw/doubleword --global
@@ -92,10 +91,10 @@ opencode --refresh
   then looks for a *project-local* lockfile in the current directory and fails. Add `-g`.
 - **The hash command ocx prints.** When a file component changed, `ocx add` refuses it and prints
   `Use 'ocx update http://localhost:8077::dw/...@sha256:<old-hash>'`. That suggestion **omits
-  `--global`** — running it verbatim is exactly what triggers the error above. Either append
+  `--global`**. Running it verbatim is exactly what triggers the error above. Either append
   `--global` to it, or just skip it and run `ocx update --all --global`.
 - **`timeout` in the MCP block is dropped.** opencode's MCP schema has no `timeout` field, so
-  `ocx build` strips it — it never reaches `opencode.jsonc`. Don't rely on it.
+  `ocx build` strips it, so it never reaches `opencode.jsonc`. Don't rely on it.
 - **Sanity check** that an update landed (installed copy should match what the container serves):
   ```bash
   shasum -a 256 ~/.config/opencode/tools/doubleword-async/dw_async_mcp.py
@@ -106,7 +105,7 @@ opencode --refresh
 In chat you can also fire an async job from any model:
 > Use the doubleword_async tool to summarise these notes: ...
 
-That's the whole setup — afterwards it's just `opencode`. Models included:
+That's the whole setup. Afterwards it's just `opencode`. Models included:
 `moonshotai/Kimi-K2.6`, `zai-org/GLM-5.2-FP8` (add more in `registry.jsonc`); use only models
 deployed on your Doubleword account. Other install methods (no Docker, hosted registry, sandbox)
 are below.
@@ -114,91 +113,35 @@ are below.
 ## What to expect
 - **Realtime**: instant streaming, as usual.
 - **Flex**: a pause (≈seconds when the queue is empty, up to ~60s when busy), then the whole
-  answer at once — it's SSE-framed but buffered, not token-by-token. Best for non-urgent work.
-- **Prompt caching**: on for the realtime provider, off for flex. Details below.
+  answer at once. It's SSE-framed but buffered, not token-by-token. Best for non-urgent work.
 
 ## Prompt caching
-The realtime `doubleword` provider is wired with `@ai-sdk/anthropic` against
-`https://api.doubleword.ai/v1` (so `/v1/messages`) specifically to get prompt caching. It is not
-a cosmetic choice, and swapping it back to `@ai-sdk/openai-compatible` silently disables caching.
 
-**Why.** opencode only injects `cache_control` breakpoints inside `applyCaching()`, and that
-function is called behind an Anthropic-shaped gate
-(`packages/opencode/src/provider/transform.ts`):
+The realtime `doubleword` provider uses `@ai-sdk/anthropic` because that wiring turns prompt
+caching on. opencode only adds `cache_control` breakpoints for providers it treats as
+Anthropic-shaped. With `@ai-sdk/openai-compatible` it sends no markers and nothing is cached.
 
-```js
-providerID === "anthropic" || providerID === "google-vertex-anthropic"
-  || api.id.includes("anthropic") || api.id.includes("claude")
-  || id.includes("anthropic")    || id.includes("claude")
-  || api.npm === "@ai-sdk/anthropic" || api.npm === "@ai-sdk/alibaba"
-```
+Measured with opencode 1.18.29 through a logging proxy:
 
-A provider id of `doubleword` with `npm: "@ai-sdk/openai-compatible"` and models named
-`moonshotai/...`, `zai-org/...` or `deepseek-ai/...` matches none of these, so `applyCaching()`
-never runs and no cache marker is ever written. `applyCaching()` does contain an
-`openaiCompatible` branch, but it is unreachable for this provider. It only fires for a provider
-that already passes the gate some other way (a model id containing `claude`, or `@ai-sdk/alibaba`).
+| Wiring | Cold call | Warm call |
+| --- | --- | --- |
+| `@ai-sdk/openai-compatible` | 0 cached | 0 cached |
+| `@ai-sdk/anthropic` | wrote 7407 | read 7407 |
 
-Setting `npm: "@ai-sdk/anthropic"` passes the gate. Because `providerID` is still `doubleword`
-rather than `anthropic`, opencode takes the content-level branch and attaches
-`cache_control: {"type":"ephemeral"}` to the first two system messages and the last two
-non-system messages. `@ai-sdk/anthropic` sends `x-api-key` and `anthropic-version` rather than
-`Authorization: Bearer`; Doubleword accepts both.
-
-**The key still comes from wherever you already keep it.** opencode resolves the credential
-itself (from `options.apiKey`, from a provider `env: [...]` entry, or from a key stored by
-`/connect`) and injects it as the SDK's `apiKey` before constructing the client, so switching to
-`@ai-sdk/anthropic` does not change how you authenticate. All three forms were verified against
-a logging proxy and all three sent a working `x-api-key` and still cached.
-
-**Measured**, running the real opencode CLI (1.18.29) through a logging proxy:
-
-| wiring | markers sent | cold call | warm call |
-| --- | --- | --- | --- |
-| `@ai-sdk/openai-compatible` | 0 | `cached_tokens: 0` of 7447 | `cached_tokens: 0` of 7462 |
-| `@ai-sdk/anthropic` | 2 to 3 per request | `cache_creation_input_tokens: 7407` | `cache_read_input_tokens: 7407` |
-
-Cache reads survive the whole agentic loop, including tool calls and reasoning models that emit
-`thinking` blocks (`moonshotai/Kimi-K2.6` multi-turn read 6376 then 6401 tokens).
-
-**Caveats.**
-- **TTL.** By default the breakpoints opencode places carry no `ttl`, so they land in Doubleword's
-  **5m** bucket. On opencode 1.18.29 you can move to the **1h** bucket by setting `cacheControl` in
-  a model's (or an agent's) `options`:
-
-  ```jsonc
-  "models": {
-    "moonshotai/Kimi-K2.6": {
-      "options": { "cacheControl": { "type": "ephemeral", "ttl": "1h" } }
-    }
-  }
-  ```
-
-  With that set, opencode skips `applyCaching()` and `@ai-sdk/anthropic` sends a single top-level
-  `cache_control` with no per-block markers. Measured: 7439 tokens written to the 1h bucket cold,
-  then 7439 and 7458 read across a warm tool loop, with nothing in the 5m bucket. Put it under the
-  model: the same key in the provider-level `options` is ignored. The check that honours it is
-  missing from the 1.17.8 source, so confirm your opencode version first. This registry keeps the
-  5m default.
-- Doubleword does **no** implicit caching. Three identical unmarked `/chat/completions` calls all
-  returned `cached_tokens: 0`, so an unmarked request pays full price every time.
-- The prefix has to clear roughly a 1,300 token floor before anything is cached.
-- Use `deepseek-ai/DeepSeek-V4-Flash` rather than `...-0731` if you test by hand; the dated
-  snapshot ignores caching.
-- `doubleword-flex` stays on `@ai-sdk/openai-compatible` because `service_tier: flex` is an
-  OpenAI-chat-completions concept, so the flex tier gets no caching under the same gate.
-- opencode surfaces this per message as `tokens.cache.write` / `tokens.cache.read`
-  (visible with `opencode run --format json`).
-- **`ANTHROPIC_API_KEY` can mask a missing key.** If no Doubleword credential is resolvable,
-  `@ai-sdk/anthropic` falls back to its own `ANTHROPIC_API_KEY` env var, so a user who has one
-  exported gets a confusing upstream `APIError` instead of a clean "connect your provider"
-  message. A resolvable Doubleword key always wins over it, and this registry pins
-  `apiKey: "{env:DOUBLEWORD_API_KEY}"`, so the fallback cannot trigger here. Worth knowing if you
-  adapt this config by hand.
+- **Auth is unchanged.** opencode resolves the key from `options.apiKey`, an `env` entry or
+  `/connect` before it builds the client.
+- **TTL.** opencode leaves `ttl` unset so the API default applies. On 1.18.29 or later a model's
+  `options` can set `cacheControl` with a `ttl` of `"5m"` or `"1h"`. Provider-level `options`
+  ignore it.
+- **Floor.** The prefix must clear the model's minimum, which is 1024 tokens on most models.
+- **Flex.** `doubleword-flex` stays on `@ai-sdk/openai-compatible` and does not cache.
+- **MCP tool.** `dw_async_mcp.py` sends one-shot prompts with no shared prefix, so it is uncached.
+- **`ANTHROPIC_API_KEY`.** If no Doubleword key resolves, `@ai-sdk/anthropic` falls back to it and
+  fails with a confusing `APIError`. This registry pins `apiKey`, so that cannot happen here.
 
 ## Background: why a local server
 ocx installs from an **http/https** URL only (it rejects local paths and `file://`), so the
-registry must be served over HTTP — but only for the moment of install. The components are copied
+registry must be served over HTTP, but only for the moment of install. The components are copied
 into your opencode config, so you stop the server right after (as in Quick start). The Quick start
 uses Docker Compose; the alternatives below do the same thing differently.
 
@@ -224,7 +167,7 @@ docker rm -f doubleword-ocx                                        # stop when d
 - Change the port: `PORT=9000 docker compose up -d` (or `-e PORT=9000 -p 9000:9000` on plain docker).
 - `ocx update`/`ocx verify` re-contact the registry URL, so restart the server for those.
 - First `docker build` can hit a transient `DeadlineExceeded` pulling `golang:1.23-alpine` from
-  Docker Hub — run `docker pull golang:1.23-alpine` once, then rebuild.
+  Docker Hub. Run `docker pull golang:1.23-alpine` once, then rebuild.
 
 ### Try it in a sandbox first (don't touch your real config)
 Prefix the `ocx` + `opencode` commands with `HOME=/tmp/dw-try` so everything installs into a
@@ -243,7 +186,7 @@ ocx installs from a static URL where `index.json` is reachable. To make this reg
 by your team:
 1. Push this repo to a **public** GitHub repo (the registry must be reachable by `ocx`).
 2. `ocx build . --out dist`.
-3. Host `dist/` as static files — pick one:
+3. Host `dist/` as static files. Pick one:
    - **Cloudflare Workers**: `npm install && npm run deploy` (see below). URL becomes
      `https://doubleword-opencode-ocx.<subdomain>.workers.dev`.
    - **GitHub Pages**: enable Pages for the repo, serving `dist/` (or commit `dist/` to a `gh-pages`
@@ -261,7 +204,7 @@ path.
 ```bash
 npm install
 
-# local dev — serves dist/ on http://localhost:8077 (same as `go run .`)
+# local dev: serves dist/ on http://localhost:8077 (same as `go run .`)
 npm run dev -- --port 8077
 
 # deploy to your Cloudflare account (needs `wrangler login` once)
@@ -286,10 +229,8 @@ re-run `npm run deploy` (or restart `npm run dev`) to serve the new bundle.
 - Config-only **flex is the primary path**; the MCP tool is complementary (use it to fire a
   discrete async job from a realtime chat, rather than switching the whole turn to flex).
 - Once Doubleword is an official [models.dev](https://models.dev) provider, the realtime provider
-  block becomes unnecessary (just a key), and the flex provider + MCP tool remain useful. Keep
-  prompt caching in mind when that happens: a models.dev entry registered as an OpenAI-compatible
-  provider would fall back outside opencode's caching gate and stop caching. The entry needs
-  `npm: "@ai-sdk/anthropic"`, or a provider id / model ids that clear the gate, to keep it.
+  block becomes unnecessary (just a key), and the flex provider + MCP tool remain useful. That
+  entry needs `npm: "@ai-sdk/anthropic"` to keep prompt caching.
 - The `doubleword_async` MCP tool (`files/mcp/dw_async_mcp.py`) calls
   `/v1/chat/completions` directly with `service_tier: flex` and sends no `cache_control`, so it
   is uncached by design. It fires one-shot prompts with no shared prefix, so there is nothing for
@@ -302,7 +243,7 @@ files/mcp/dw_async_mcp.py            # async MCP tool (stdlib only)
 files/agent/dw-flex.md               # flex background subagent
 dist/                                # built output (generated by `ocx build`)
 main.go                              # Go static server that embeds + serves dist/ (Docker path)
-go.mod                               # (no dependencies — stdlib only)
+go.mod                               # (no dependencies, stdlib only)
 Dockerfile                           # self-contained image: docker run -p 8077:8077
 docker-compose.yml                   # docker compose up -d --build
 src/index.ts                         # Cloudflare Worker port of main.go (serves dist/ via ASSETS)
