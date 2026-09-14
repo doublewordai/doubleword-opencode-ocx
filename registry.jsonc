@@ -24,7 +24,11 @@
         "provider": {
           "doubleword": {
             "name": "Doubleword",
-            "npm": "@ai-sdk/openai-compatible",
+            // Anthropic Messages endpoint (/v1/messages). Using @ai-sdk/anthropic makes opencode
+            // auto-inject cache_control breakpoints (system + last messages) -> prompt caching on
+            // by default. Doubleword serves this endpoint at {baseURL}/messages and returns
+            // cache_read_input_tokens. apiKey is sent as x-api-key + anthropic-version automatically.
+            "npm": "@ai-sdk/anthropic",
             "options": {
               "baseURL": "https://api.doubleword.ai/v1",
               "apiKey": "{env:DOUBLEWORD_API_KEY}"

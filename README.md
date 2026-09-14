@@ -3,9 +3,12 @@
 One-step setup for using [Doubleword](https://doubleword.ai) in [opencode](https://opencode.ai)
 via [ocx](https://github.com/kdcokenny/ocx). Installs:
 
-- **`doubleword`** — realtime provider (`/v1/chat/completions`, OpenAI-compatible).
-- **`doubleword-flex`** — the same models on the **flex (async) tier** (`service_tier: flex`):
-  slower, cheaper. Works as a normal model because flex now streams SSE.
+- **`doubleword`**: realtime provider on Doubleword's Anthropic-compatible Messages endpoint
+  (`/v1/messages`, wired with `@ai-sdk/anthropic`). This wiring is what turns **prompt caching**
+  on; see [Prompt caching](#prompt-caching) for why the OpenAI-compatible wiring does not cache.
+- **`doubleword-flex`**: the same models on the **flex (async) tier** (`service_tier: flex`,
+  `/v1/chat/completions`, OpenAI-compatible): slower, cheaper. Works as a normal model because
+  flex now streams SSE. No prompt caching on this tier (see below).
 - **`small_model`** pinned to realtime, so title/summary stays fast and only your answers pay
   flex latency.
 - **`doubleword_async`** — an MCP tool that runs a prompt on the flex tier and returns the result
@@ -112,6 +115,70 @@ are below.
 - **Realtime**: instant streaming, as usual.
 - **Flex**: a pause (≈seconds when the queue is empty, up to ~60s when busy), then the whole
   answer at once — it's SSE-framed but buffered, not token-by-token. Best for non-urgent work.
+- **Prompt caching**: on for the realtime provider, off for flex. Details below.
+
+## Prompt caching
+The realtime `doubleword` provider is wired with `@ai-sdk/anthropic` against
+`https://api.doubleword.ai/v1` (so `/v1/messages`) specifically to get prompt caching. It is not
+a cosmetic choice, and swapping it back to `@ai-sdk/openai-compatible` silently disables caching.
+
+**Why.** opencode only injects `cache_control` breakpoints inside `applyCaching()`, and that
+function is called behind an Anthropic-shaped gate
+(`packages/opencode/src/provider/transform.ts`):
+
+```js
+providerID === "anthropic" || providerID === "google-vertex-anthropic"
+  || api.id.includes("anthropic") || api.id.includes("claude")
+  || id.includes("anthropic")    || id.includes("claude")
+  || api.npm === "@ai-sdk/anthropic" || api.npm === "@ai-sdk/alibaba"
+```
+
+A provider id of `doubleword` with `npm: "@ai-sdk/openai-compatible"` and models named
+`moonshotai/...`, `zai-org/...` or `deepseek-ai/...` matches none of these, so `applyCaching()`
+never runs and no cache marker is ever written. `applyCaching()` does contain an
+`openaiCompatible` branch, but it is unreachable for this provider. It only fires for a provider
+that already passes the gate some other way (a model id containing `claude`, or `@ai-sdk/alibaba`).
+
+Setting `npm: "@ai-sdk/anthropic"` passes the gate. Because `providerID` is still `doubleword`
+rather than `anthropic`, opencode takes the content-level branch and attaches
+`cache_control: {"type":"ephemeral"}` to the first two system messages and the last two
+non-system messages. `@ai-sdk/anthropic` sends `x-api-key` and `anthropic-version` rather than
+`Authorization: Bearer`; Doubleword accepts both.
+
+**The key still comes from wherever you already keep it.** opencode resolves the credential
+itself (from `options.apiKey`, from a provider `env: [...]` entry, or from a key stored by
+`/connect`) and injects it as the SDK's `apiKey` before constructing the client, so switching to
+`@ai-sdk/anthropic` does not change how you authenticate. All three forms were verified against
+a logging proxy and all three sent a working `x-api-key` and still cached.
+
+**Measured**, running the real opencode CLI (1.18.29) through a logging proxy:
+
+| wiring | markers sent | cold call | warm call |
+| --- | --- | --- | --- |
+| `@ai-sdk/openai-compatible` | 0 | `cached_tokens: 0` of 7447 | `cached_tokens: 0` of 7462 |
+| `@ai-sdk/anthropic` | 2 to 3 per request | `cache_creation_input_tokens: 7407` | `cache_read_input_tokens: 7407` |
+
+Cache reads survive the whole agentic loop, including tool calls and reasoning models that emit
+`thinking` blocks (`moonshotai/Kimi-K2.6` multi-turn read 6376 then 6401 tokens).
+
+**Caveats.**
+- opencode emits no `ttl`, so every entry uses Doubleword's **5m** default. The 1h TTL is not
+  reachable from opencode config today.
+- Doubleword does **no** implicit caching. Three identical unmarked `/chat/completions` calls all
+  returned `cached_tokens: 0`, so an unmarked request pays full price every time.
+- The prefix has to clear roughly a 1,300 token floor before anything is cached.
+- Use `deepseek-ai/DeepSeek-V4-Flash` rather than `...-0731` if you test by hand; the dated
+  snapshot ignores caching.
+- `doubleword-flex` stays on `@ai-sdk/openai-compatible` because `service_tier: flex` is an
+  OpenAI-chat-completions concept, so the flex tier gets no caching under the same gate.
+- opencode surfaces this per message as `tokens.cache.write` / `tokens.cache.read`
+  (visible with `opencode run --format json`).
+- **`ANTHROPIC_API_KEY` can mask a missing key.** If no Doubleword credential is resolvable,
+  `@ai-sdk/anthropic` falls back to its own `ANTHROPIC_API_KEY` env var, so a user who has one
+  exported gets a confusing upstream `APIError` instead of a clean "connect your provider"
+  message. A resolvable Doubleword key always wins over it, and this registry pins
+  `apiKey: "{env:DOUBLEWORD_API_KEY}"`, so the fallback cannot trigger here. Worth knowing if you
+  adapt this config by hand.
 
 ## Background: why a local server
 ocx installs from an **http/https** URL only (it rejects local paths and `file://`), so the
@@ -203,7 +270,14 @@ re-run `npm run deploy` (or restart `npm run dev`) to serve the new bundle.
 - Config-only **flex is the primary path**; the MCP tool is complementary (use it to fire a
   discrete async job from a realtime chat, rather than switching the whole turn to flex).
 - Once Doubleword is an official [models.dev](https://models.dev) provider, the realtime provider
-  block becomes unnecessary (just a key) — the flex provider + MCP tool remain useful.
+  block becomes unnecessary (just a key), and the flex provider + MCP tool remain useful. Keep
+  prompt caching in mind when that happens: a models.dev entry registered as an OpenAI-compatible
+  provider would fall back outside opencode's caching gate and stop caching. The entry needs
+  `npm: "@ai-sdk/anthropic"`, or a provider id / model ids that clear the gate, to keep it.
+- The `doubleword_async` MCP tool (`files/mcp/dw_async_mcp.py`) calls
+  `/v1/chat/completions` directly with `service_tier: flex` and sends no `cache_control`, so it
+  is uncached by design. It fires one-shot prompts with no shared prefix, so there is nothing for
+  a cache to hit; leave it as is unless it grows a reused system prompt.
 
 ## Repo layout
 ```

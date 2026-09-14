@@ -15,7 +15,7 @@
         "provider": {
           "doubleword": {
             "name": "Doubleword",
-            "npm": "@ai-sdk/openai-compatible",
+            "npm": "@ai-sdk/anthropic",
             "options": {
               "baseURL": "https://api.doubleword.ai/v1",
               "apiKey": "{env:DOUBLEWORD_API_KEY}"
