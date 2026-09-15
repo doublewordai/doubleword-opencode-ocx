@@ -3,14 +3,16 @@
 One-step setup for using [Doubleword](https://doubleword.ai) in [opencode](https://opencode.ai)
 via [ocx](https://github.com/kdcokenny/ocx). Installs:
 
-- **`doubleword`** — realtime provider (`/v1/chat/completions`, OpenAI-compatible).
-- **`doubleword-flex`** — the same models on the **flex (async) tier** (`service_tier: flex`):
-  slower, cheaper. Works as a normal model because flex now streams SSE.
+- **`doubleword`**: realtime provider on Doubleword's Anthropic-compatible Messages endpoint
+  (`/v1/messages`, wired with `@ai-sdk/anthropic` so [prompt caching](#prompt-caching) works).
+- **`doubleword-flex`**: the same models on the **flex (async) tier** (`service_tier: flex`,
+  `/v1/chat/completions`, OpenAI-compatible). Slower and cheaper. Works as a normal model because
+  flex now streams SSE. No prompt caching on this tier.
 - **`small_model`** pinned to realtime, so title/summary stays fast and only your answers pay
   flex latency.
-- **`doubleword_async`** — an MCP tool that runs a prompt on the flex tier and returns the result
+- **`doubleword_async`**: an MCP tool that runs a prompt on the flex tier and returns the result
   (fire-and-forget async from any model/agent).
-- **`dw-flex`** — a background subagent pinned to the flex tier for non-urgent work.
+- **`dw-flex`**: a background subagent pinned to the flex tier for non-urgent work.
 
 No API key is stored in this repo. Each user supplies their own via `DOUBLEWORD_API_KEY`
 (resolved at runtime with opencode's `{env:...}` substitution).
@@ -21,12 +23,12 @@ No API key is stored in this repo. Each user supplies their own via `DOUBLEWORD_
   curl -fsSL https://opencode.ai/install | bash
   ```
 - [ocx](https://github.com/kdcokenny/ocx): `npm i -g ocx` or `bun i -g ocx`
-- `python3` (the MCP tool is stdlib-only — no pip installs)
+- `python3` (the MCP tool is stdlib-only with no pip installs)
 - A Doubleword API key: `export DOUBLEWORD_API_KEY=sk-...`
 
 ## Quick start (local, with Docker)
 Run the registry as a container, install it into opencode, done. The container is only needed
-during install — the components get copied into your config.
+during install. The components get copied into your config.
 
 ```bash
 git clone <this-repo> && cd doubleword-opencode-ocx
@@ -40,7 +42,7 @@ ocx init --global                                  # This is only necessary for 
 ocx registry add http://localhost:8077 --name dw --global
 ocx add dw/doubleword --global                     # providers + flex + MCP tool + agent
 
-# 3. stop the container — files are now in ~/.config/opencode
+# 3. stop the container (files are now in ~/.config/opencode)
 docker compose down
 
 # 4. use it
@@ -52,7 +54,7 @@ opencode --model doubleword-flex/moonshotai/Kimi-K2.6   # flex (async, cheaper)
 ```
 
 ## Updating after changes to the registry
-You installed with `--global`, so **every `ocx` command below needs `-g`/`--global`** — its
+You installed with `--global`, so **every `ocx` command below needs `-g`/`--global`**. Its
 lockfile lives in `~/.config/opencode`, not in this repo. (Without it you get
 `No ocx.jsonc found in .opencode/ or project root`.)
 
@@ -68,7 +70,7 @@ docker compose up -d --build
 ocx update --all --global
 
 # 4. re-apply the bundle's config (provider / models / small_model).
-#    The `doubleword` bundle has no files, so step 3 never touches it — only `add`
+#    The `doubleword` bundle has no files, so step 3 never touches it. Only `add`
 #    rewrites those blocks in opencode.jsonc. Run this whenever you change a provider,
 #    add/remove a model, or change small_model.
 ocx add dw/doubleword --global
@@ -89,10 +91,10 @@ opencode --refresh
   then looks for a *project-local* lockfile in the current directory and fails. Add `-g`.
 - **The hash command ocx prints.** When a file component changed, `ocx add` refuses it and prints
   `Use 'ocx update http://localhost:8077::dw/...@sha256:<old-hash>'`. That suggestion **omits
-  `--global`** — running it verbatim is exactly what triggers the error above. Either append
+  `--global`**. Running it verbatim is exactly what triggers the error above. Either append
   `--global` to it, or just skip it and run `ocx update --all --global`.
 - **`timeout` in the MCP block is dropped.** opencode's MCP schema has no `timeout` field, so
-  `ocx build` strips it — it never reaches `opencode.jsonc`. Don't rely on it.
+  `ocx build` strips it, so it never reaches `opencode.jsonc`. Don't rely on it.
 - **Sanity check** that an update landed (installed copy should match what the container serves):
   ```bash
   shasum -a 256 ~/.config/opencode/tools/doubleword-async/dw_async_mcp.py
@@ -103,7 +105,7 @@ opencode --refresh
 In chat you can also fire an async job from any model:
 > Use the doubleword_async tool to summarise these notes: ...
 
-That's the whole setup — afterwards it's just `opencode`. Models included:
+That's the whole setup. Afterwards it's just `opencode`. Models included:
 `moonshotai/Kimi-K2.6`, `zai-org/GLM-5.2-FP8` (add more in `registry.jsonc`); use only models
 deployed on your Doubleword account. Other install methods (no Docker, hosted registry, sandbox)
 are below.
@@ -111,11 +113,35 @@ are below.
 ## What to expect
 - **Realtime**: instant streaming, as usual.
 - **Flex**: a pause (≈seconds when the queue is empty, up to ~60s when busy), then the whole
-  answer at once — it's SSE-framed but buffered, not token-by-token. Best for non-urgent work.
+  answer at once. It's SSE-framed but buffered, not token-by-token. Best for non-urgent work.
+
+## Prompt caching
+
+The realtime `doubleword` provider uses `@ai-sdk/anthropic` because that wiring turns prompt
+caching on. opencode only adds `cache_control` breakpoints for providers it treats as
+Anthropic-shaped. With `@ai-sdk/openai-compatible` it sends no markers and nothing is cached.
+
+Measured with opencode 1.18.29 through a logging proxy:
+
+| Wiring | Cold call | Warm call |
+| --- | --- | --- |
+| `@ai-sdk/openai-compatible` | 0 cached | 0 cached |
+| `@ai-sdk/anthropic` | wrote 7407 | read 7407 |
+
+- **Auth is unchanged.** opencode resolves the key from `options.apiKey`, an `env` entry or
+  `/connect` before it builds the client.
+- **TTL.** opencode leaves `ttl` unset so the API default applies. On 1.18.29 or later a model's
+  `options` can set `cacheControl` with a `ttl` of `"5m"` or `"1h"`. Provider-level `options`
+  ignore it.
+- **Floor.** The prefix must clear the model's minimum, which is 1024 tokens on most models.
+- **Flex.** `doubleword-flex` stays on `@ai-sdk/openai-compatible` and does not cache.
+- **MCP tool.** `dw_async_mcp.py` sends one-shot prompts with no shared prefix, so it is uncached.
+- **`ANTHROPIC_API_KEY`.** If no Doubleword key resolves, `@ai-sdk/anthropic` falls back to it and
+  fails with a confusing `APIError`. This registry pins `apiKey`, so that cannot happen here.
 
 ## Background: why a local server
 ocx installs from an **http/https** URL only (it rejects local paths and `file://`), so the
-registry must be served over HTTP — but only for the moment of install. The components are copied
+registry must be served over HTTP, but only for the moment of install. The components are copied
 into your opencode config, so you stop the server right after (as in Quick start). The Quick start
 uses Docker Compose; the alternatives below do the same thing differently.
 
@@ -141,7 +167,7 @@ docker rm -f doubleword-ocx                                        # stop when d
 - Change the port: `PORT=9000 docker compose up -d` (or `-e PORT=9000 -p 9000:9000` on plain docker).
 - `ocx update`/`ocx verify` re-contact the registry URL, so restart the server for those.
 - First `docker build` can hit a transient `DeadlineExceeded` pulling `golang:1.23-alpine` from
-  Docker Hub — run `docker pull golang:1.23-alpine` once, then rebuild.
+  Docker Hub. Run `docker pull golang:1.23-alpine` once, then rebuild.
 
 ### Try it in a sandbox first (don't touch your real config)
 Prefix the `ocx` + `opencode` commands with `HOME=/tmp/dw-try` so everything installs into a
@@ -160,7 +186,7 @@ ocx installs from a static URL where `index.json` is reachable. To make this reg
 by your team:
 1. Push this repo to a **public** GitHub repo (the registry must be reachable by `ocx`).
 2. `ocx build . --out dist`.
-3. Host `dist/` as static files — pick one:
+3. Host `dist/` as static files. Pick one:
    - **Cloudflare Workers**: `npm install && npm run deploy` (see below). URL becomes
      `https://doubleword-opencode-ocx.<subdomain>.workers.dev`.
    - **GitHub Pages**: enable Pages for the repo, serving `dist/` (or commit `dist/` to a `gh-pages`
@@ -178,7 +204,7 @@ path.
 ```bash
 npm install
 
-# local dev — serves dist/ on http://localhost:8077 (same as `go run .`)
+# local dev: serves dist/ on http://localhost:8077 (same as `go run .`)
 npm run dev -- --port 8077
 
 # deploy to your Cloudflare account (needs `wrangler login` once)
@@ -203,7 +229,12 @@ re-run `npm run deploy` (or restart `npm run dev`) to serve the new bundle.
 - Config-only **flex is the primary path**; the MCP tool is complementary (use it to fire a
   discrete async job from a realtime chat, rather than switching the whole turn to flex).
 - Once Doubleword is an official [models.dev](https://models.dev) provider, the realtime provider
-  block becomes unnecessary (just a key) — the flex provider + MCP tool remain useful.
+  block becomes unnecessary (just a key), and the flex provider + MCP tool remain useful. That
+  entry needs `npm: "@ai-sdk/anthropic"` to keep prompt caching.
+- The `doubleword_async` MCP tool (`files/mcp/dw_async_mcp.py`) calls
+  `/v1/chat/completions` directly with `service_tier: flex` and sends no `cache_control`, so it
+  is uncached by design. It fires one-shot prompts with no shared prefix, so there is nothing for
+  a cache to hit; leave it as is unless it grows a reused system prompt.
 
 ## Repo layout
 ```
@@ -212,7 +243,7 @@ files/mcp/dw_async_mcp.py            # async MCP tool (stdlib only)
 files/agent/dw-flex.md               # flex background subagent
 dist/                                # built output (generated by `ocx build`)
 main.go                              # Go static server that embeds + serves dist/ (Docker path)
-go.mod                               # (no dependencies — stdlib only)
+go.mod                               # (no dependencies, stdlib only)
 Dockerfile                           # self-contained image: docker run -p 8077:8077
 docker-compose.yml                   # docker compose up -d --build
 src/index.ts                         # Cloudflare Worker port of main.go (serves dist/ via ASSETS)

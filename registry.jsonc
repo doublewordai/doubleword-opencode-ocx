@@ -24,7 +24,8 @@
         "provider": {
           "doubleword": {
             "name": "Doubleword",
-            "npm": "@ai-sdk/openai-compatible",
+            // @ai-sdk/anthropic targets /v1/messages, which turns on opencode's prompt caching.
+            "npm": "@ai-sdk/anthropic",
             "options": {
               "baseURL": "https://api.doubleword.ai/v1",
               "apiKey": "{env:DOUBLEWORD_API_KEY}"
